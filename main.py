@@ -1,17 +1,11 @@
-import threading
-from simulator.ecu_simulator import run_simulator
-from core.receiver import run_receiver
+import sys
+from PySide6.QtWidgets import QApplication
+from gui.main_window import MainWindow
 
-receiver_thread = threading.Thread(
-    target = run_receiver
-)
 
-simulator_thread = threading.Thread(
-    target = run_simulator
-)
+app = QApplication(sys.argv)
 
-receiver_thread.start()
-simulator_thread.start()
+window = MainWindow()
+window.show()
 
-receiver_thread.join()
-simulator_thread.join()
+sys.exit(app.exec())

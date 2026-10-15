@@ -1,37 +1,37 @@
 import can
+import time
+from core.decoder import decode_message
 
-def run_receiver():
+def run_receiver(on_message):
 
     bus = can.Bus(
         interface="virtual",
         channel="canscope"
     )
 
+    start_time = time.time()
+    message_count = 0
+
 
     while True:
         message = bus.recv(timeout=1.0)
 
         if message is not None:
+            message_count += 1
+            data_hex = message.data.hex(" ").upper()
+            timestamp = time.time() - start_time
+            decoded = decode_message(message)
 
-            # Rpm
-            if message.arbitration_id == 0x100:
-                rpm = int.from_bytes(
-                    message.data,
-                    byteorder="big"
+            can_id = f"0x{message.arbitration_id:X}"
+
+            on_message(
+                timestamp,
+                can_id,
+                message.dlc,
+                data_hex,
+                decoded
                 )
-                print(f"[0x100] RPM     : {rpm} rpm")
-            # Speed
-            elif message.arbitration_id == 0x101:
-                speed = int.from_bytes(
-                    message.data,
-                    byteorder="big"
-                )
-                print(f"[0x101] Speed   : {speed} km/h")
-            # Battery
-            elif message.arbitration_id == 0x102:
-                battery = int.from_bytes(
-                    message.data,
-                    byteorder="big"
-                )
-                print(f"[0x102] Battery   : {battery} %\n")
-                
+
+            if message.arbitration_id == 0x102:
+                print()
+
