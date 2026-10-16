@@ -4,7 +4,13 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QTableWidget,
     QTableWidgetItem,
-    QHeaderView
+    QHeaderView,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QPushButton,
+    QLabel,
+    QCheckBox
 )
 
 from core.receiver import run_receiver
@@ -37,9 +43,63 @@ class MainWindow(QMainWindow):
                 "Decoded"
             ]
         )
-        self.setCentralWidget(self.table)
 
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
         
+        main_layout = QVBoxLayout()
+        central_widget.setLayout(main_layout)
+
+        control_layout = QHBoxLayout()
+        self.start_button = QPushButton("Start")
+        self.stop_button = QPushButton("Stop")
+        self.clear_button = QPushButton("Clear")
+        self.auto_scroll_checkbox = QCheckBox("Auto Scroll")
+
+        #message_count
+        self.message_count = 0
+        self.message_label = QLabel("Message: 0")
+
+        # message running
+        self.is_running = True
+
+        # start, stop button enabled
+        self.start_button.setEnabled(False)
+        self.stop_button.setEnabled(True)
+
+        # Auto scroll
+        self.auto_scroll_checkbox.setChecked(True)
+        
+
+        # 시작, 중지, 초기화 버튼
+        control_layout.addWidget(self.start_button)
+        control_layout.addWidget(self.stop_button)
+        control_layout.addWidget(self.clear_button)
+        control_layout.addWidget(self.auto_scroll_checkbox)
+
+        control_layout.addStretch()
+        control_layout.addWidget(self.message_label)
+
+        main_layout.addLayout(control_layout)
+        main_layout.addWidget(self.table)
+
+
+        # clear button
+        self.clear_button.clicked.connect(
+            self.clear_table
+        )
+
+        # stop button
+        self.stop_button.clicked.connect(
+            self.stop_receiving
+        )
+
+        # start button
+        self.start_button.clicked.connect(
+            self.start_receiving
+        )
+
+
 
         self.setStyleSheet(
             """
@@ -70,6 +130,12 @@ class MainWindow(QMainWindow):
                 border: 1px solid #1A1A1A;
                 }
 
+            QLabel {
+                color: #00FF00;
+                background-color: transparent;
+                font-weight: bold;
+            }
+
             """
         )
 
@@ -90,14 +156,20 @@ class MainWindow(QMainWindow):
         receiver_thread.start()
         simulator_thread.start()
 
+
+
+
+
     def add_message(
         self,
         timestamp,
         can_id,
         dlc,
         data,
-        decoded
+        decoded,
     ):
+        if not self.is_running:
+            return
 
         row = self.table.rowCount()
 
@@ -132,4 +204,39 @@ class MainWindow(QMainWindow):
             4,
             QTableWidgetItem(decoded)
         )
-        self.table.scrollToBottom()
+
+
+        ### message ###
+        self.message_count += 1
+        self.message_label.setText(
+            f"Messages: {self.message_count}"
+        )
+
+        if self.auto_scroll_checkbox.isChecked():
+            self.table.scrollToBottom()
+
+
+
+    ### start, stop, clear button function ###
+    # clear
+    def clear_table(self):
+        self.table.setRowCount(0)
+        self.message_count = 0
+        self.message_label.setText(
+            "Messages: 0"
+        )
+
+    # stop
+    def stop_receiving(self):
+        self.is_running = False
+
+        self.start_button.setEnabled(True)
+        self.stop_button.setEnabled(False)
+
+    # start
+    def start_receiving(self):
+        self.is_running = True
+
+        self.start_button.setEnabled(False)
+        self.stop_button.setEnabled(True)
+
