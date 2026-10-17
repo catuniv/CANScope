@@ -10,11 +10,15 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QPushButton,
     QLabel,
-    QCheckBox
+    QCheckBox,
+    QComboBox,
+    QLineEdit
 )
 
 from core.receiver import run_receiver
 from simulator.ecu_simulator import run_simulator
+
+
 
 class MainWindow(QMainWindow):
 
@@ -43,6 +47,35 @@ class MainWindow(QMainWindow):
                 "Decoded"
             ]
         )
+        self.table.verticalHeader().setVisible(False)
+
+        header = self.table.horizontalHeader()
+
+        header.setSectionResizeMode(
+            0,
+            QHeaderView.ResizeMode.ResizeToContents
+        )
+
+        header.setSectionResizeMode(
+            1,
+            QHeaderView.ResizeMode.ResizeToContents
+        )
+
+        header.setSectionResizeMode(
+            2,
+            QHeaderView.ResizeMode.ResizeToContents
+        )
+
+        header.setSectionResizeMode(
+            3,
+            QHeaderView.ResizeMode.Stretch
+        )
+
+        header.setSectionResizeMode(
+            4,
+            QHeaderView.ResizeMode.Stretch
+        )
+
 
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
@@ -51,14 +84,28 @@ class MainWindow(QMainWindow):
         central_widget.setLayout(main_layout)
 
         control_layout = QHBoxLayout()
+
+        # Start, Stop, Clear Button init
         self.start_button = QPushButton("Start")
         self.stop_button = QPushButton("Stop")
         self.clear_button = QPushButton("Clear")
+
+        # Auto Scroll init
         self.auto_scroll_checkbox = QCheckBox("Auto Scroll")
+
+        # CAN Filter init
+        self.id_filter = QComboBox()
+
+        # Search init
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText(
+            "Search ID / DATA / Decoded"
+        )
 
         #message_count
         self.message_count = 0
-        self.message_label = QLabel("Message: 0")
+        self.total_label = QLabel("Total: 0")
+        self.visible_label = QLabel("Visibel: 0")
 
         # message running
         self.is_running = True
@@ -75,29 +122,59 @@ class MainWindow(QMainWindow):
         control_layout.addWidget(self.start_button)
         control_layout.addWidget(self.stop_button)
         control_layout.addWidget(self.clear_button)
+
+        #Filter Box
+        control_layout.addWidget(self.id_filter)
+
+        # Search Line
+        control_layout.addWidget(self.search_input)
+
+        # Auto Scroll CheckBox
         control_layout.addWidget(self.auto_scroll_checkbox)
 
+
+
         control_layout.addStretch()
-        control_layout.addWidget(self.message_label)
+        control_layout.addWidget(self.total_label)
+        control_layout.addWidget(self.visible_label)
 
         main_layout.addLayout(control_layout)
         main_layout.addWidget(self.table)
 
-
-        # clear button
+        ### Signal ###
+        # clear Signal
         self.clear_button.clicked.connect(
             self.clear_table
         )
 
-        # stop button
+        # stop Signal
         self.stop_button.clicked.connect(
             self.stop_receiving
         )
 
-        # start button
+        # start Signal
         self.start_button.clicked.connect(
             self.start_receiving
         )
+
+        # Search Signal
+        self.id_filter.currentTextChanged.connect(
+            self.apply_filter
+        )
+        self.search_input.textChanged.connect(
+            self.apply_filter
+        )
+
+
+        self.id_filter.addItems(
+            [
+                "All IDs",
+                "0x100",
+                "0x101",
+                "0x102"
+            ]
+        )
+
 
 
 
@@ -168,11 +245,12 @@ class MainWindow(QMainWindow):
         data,
         decoded,
     ):
+
+        # Start / Stop / Clear default
         if not self.is_running:
             return
 
         row = self.table.rowCount()
-
         self.table.insertRow(row)
 
         self.table.setItem(
@@ -208,22 +286,82 @@ class MainWindow(QMainWindow):
 
         ### message ###
         self.message_count += 1
-        self.message_label.setText(
-            f"Messages: {self.message_count}"
+        self.total_label.setText(
+            f"Total: {self.message_count}"
         )
+
+        self.apply_filter_to_row(row)
+
+        self.update_visible_count()
+
 
         if self.auto_scroll_checkbox.isChecked():
             self.table.scrollToBottom()
 
 
+    def apply_filter_to_row(self, row):
+        selected_id = self.id_filter.currentText()
+        search_text = self.search_input.text().lower()
+        id_item = self.table.item(row, 1)
+
+        data_item = self.table.item(row, 3)
+        decoded_item = self.table.item(row, 4)
+
+        can_id = id_item.text()
+        data = data_item.text()
+        decoded = decoded_item.text()
+
+        id_match = (
+            selected_id == "All IDs"
+            or can_id == selected_id
+        )
+
+        search_target = (
+            f"{can_id} {data} {decoded}"
+        ).lower()
+
+        search_match = (
+            search_text == ""
+            or search_text in search_target
+        )
+
+        show_row = id_match and search_match
+
+        self.table.setRowHidden(
+            row,
+            not show_row
+        )
+
+
+
+    def apply_filter(self):
+        for row in range(self.table.rowCount()):
+            self.apply_filter_to_row(row)
+            self.update_visible_count()
+
+
+    def update_visible_count(self):
+        visible_count = 0
+
+        for row in range(self.table.rowCount()):
+            if not self.table.isRowHidden(row):
+                visible_count += 1
+
+        self.visible_label.setText(
+            f"Visible: {visible_count}"
+        )
 
     ### start, stop, clear button function ###
     # clear
     def clear_table(self):
         self.table.setRowCount(0)
         self.message_count = 0
-        self.message_label.setText(
-            "Messages: 0"
+        
+        self.total_label.setText(
+            "Total: 0"
+        )
+        self.visible_label.setText(
+            "Visible: 0"
         )
 
     # stop
@@ -240,3 +378,5 @@ class MainWindow(QMainWindow):
         self.start_button.setEnabled(False)
         self.stop_button.setEnabled(True)
 
+
+    
