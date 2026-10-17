@@ -1,5 +1,7 @@
 import threading
 from PySide6.QtCore import Signal
+from PySide6.QtGui import QPixmap, QPainter, QColor
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QMainWindow,
     QTableWidget,
@@ -14,13 +16,30 @@ from PySide6.QtWidgets import (
     QComboBox,
     QLineEdit
 )
-
 from core.receiver import run_receiver
 from simulator.ecu_simulator import run_simulator
 
 
-
 class MainWindow(QMainWindow):
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+
+        scaled_background = self.background.scaled(
+            self.size(),
+            Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+            Qt.TransformationMode.SmoothTransformation
+        )
+
+        x = (self.width() - scaled_background.width()) // 2
+        y = (self.height() - scaled_background.height()) // 2
+
+        painter.drawPixmap(x, y, scaled_background)
+        super().paintEvent(event)
+        painter.fillRect(
+            self.rect(),
+            QColor(0, 0, 0, 170)
+        )
 
     message_received = Signal(
         float,
@@ -32,6 +51,8 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
+
+        self.background = QPixmap("assets/can3.jpg")
 
         self.setWindowTitle("CANScope")
         self.resize(1000, 600)
@@ -78,6 +99,9 @@ class MainWindow(QMainWindow):
 
 
         central_widget = QWidget()
+        central_widget.setStyleSheet(
+            "background: transparent;"
+        )
         self.setCentralWidget(central_widget)
         
         main_layout = QVBoxLayout()
@@ -105,7 +129,7 @@ class MainWindow(QMainWindow):
         #message_count
         self.message_count = 0
         self.total_label = QLabel("Total: 0")
-        self.visible_label = QLabel("Visibel: 0")
+        self.visible_label = QLabel("Visible: 0")
 
         # message running
         self.is_running = True
@@ -180,37 +204,49 @@ class MainWindow(QMainWindow):
 
         self.setStyleSheet(
             """
-            QMainWindow {
-                background-color: #000000;
+            QTableWidget {
+                background-color: rgba(0, 0, 0, 252);
+                alternate-background-color: rgba(10, 10, 10, 230);
+                color: #FFFFFF;
+                border: 1px solid #FFFFFF;
+                gridline-color: #666666;
+                selection-background-color: rgba(70, 70, 70, 255);
+                selection-color: #FFFFFF;
             }
 
-            QTableWidget {
-                    background-color: #000000;
-                    alternate-background-color: #0A0A0A;
-                    color: #00FF00; /* 테이블 내부 글자색: 형광 초록 */
-                    border: 1px solid #1A1A1A;
-                    gridline-color: #1A331A; /* 격자선: 어두운 초록 */
-                    selection-background-color: #004400; /* 선택 영역 배경: 진한 초록 */
-                    selection-color: #FFFFFF;
-                }
-
             QHeaderView::section {
-                    background-color: #050505;
-                    color: #00FF00; /* 테이블 헤더 글자색: 형광 초록 */
-                    border: 1px solid #1A1A1A;
-                    padding: 8px;
-                    font-weight: bold;
-                }
+                background-color: rgba(5, 5, 5, 252);
+                color: #FFFFFF;
+                border: 1px solid #FFFFFF;
+                padding: 8px;
+                font-weight: bold;
+            }
 
             QTableCornerButton::section {
-                background-color: #050505;
-                border: 1px solid #1A1A1A;
-                }
+                background-color: rgba(5, 5, 5, 210);
+                border: 1px solid #FFFFFF;
+            }
 
             QLabel {
-                color: #00FF00;
+                color: #FFFFFF;
                 background-color: transparent;
                 font-weight: bold;
+            }
+
+            QLineEdit {
+                background-color: rgba(0, 0, 0, 180);
+                color: #FFFFFF;
+                border: 1px solid #FFFFFF;
+                border-radius: 4px;
+                padding: 5px;
+            }
+
+            QLineEdit::placeholder {
+                color: #AAAAAA;
+            }
+
+            QLineEdit:focus {
+                border: 2px solid #FFFFFF;
             }
 
             """
@@ -356,7 +392,7 @@ class MainWindow(QMainWindow):
     def clear_table(self):
         self.table.setRowCount(0)
         self.message_count = 0
-        
+
         self.total_label.setText(
             "Total: 0"
         )
