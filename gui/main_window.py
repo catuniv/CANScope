@@ -1,6 +1,6 @@
 import threading
 from PySide6.QtCore import Signal
-from PySide6.QtGui import QPixmap, QPainter, QColor
+from PySide6.QtGui import QPixmap, QPainter, QColor, QPalette
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QMainWindow,
@@ -98,6 +98,53 @@ class MainWindow(QMainWindow):
         )
 
 
+
+        self.stats_table = QTableWidget()
+        self.stats_table.setColumnCount(4)
+        self.stats_table.setRowCount(3)
+        self.stats_table.setMaximumHeight(150)
+        stats_header = self.stats_table.horizontalHeader()
+
+        self.stats_table.setEditTriggers(
+            QTableWidget.EditTrigger.NoEditTriggers
+        )
+
+        stats_header.setSectionResizeMode(
+            QHeaderView.ResizeMode.Stretch
+        )
+
+        self.stats_table.setHorizontalHeaderLabels(
+            [
+                "ID",
+                "Count",
+                "Period",
+                "Frequency"
+            ]
+        )
+
+        self.stats_table.setRowCount(3)
+        self.stats_table.verticalHeader().setVisible(False)
+
+        self.stats_table.setItem(
+            0,
+            0,
+            QTableWidgetItem("0x100")
+        )
+
+        self.stats_table.setItem(
+            1,
+            0,
+            QTableWidgetItem("0x101")
+        )
+
+        self.stats_table.setItem(
+            2,
+            0,
+            QTableWidgetItem("0x102")
+        )
+
+
+
         central_widget = QWidget()
         central_widget.setStyleSheet(
             "background: transparent;"
@@ -119,6 +166,18 @@ class MainWindow(QMainWindow):
 
         # CAN Filter init
         self.id_filter = QComboBox()
+        self.id_filter.setMinimumWidth(110)
+        self.id_filter.view().setStyleSheet(
+        """
+        QListView {
+            background-color: #111111;
+            color: #FFFFFF;
+            border: 1px solid #FFFFFF;
+            selection-background-color: #444444;
+            selection-color: #FFFFFF;
+        }
+        """
+    )
 
         # Search init
         self.search_input = QLineEdit()
@@ -130,6 +189,18 @@ class MainWindow(QMainWindow):
         self.message_count = 0
         self.total_label = QLabel("Total: 0")
         self.visible_label = QLabel("Visible: 0")
+
+
+        # CAN_id counts
+        self.id_counts = {}
+
+        # periods, frequency
+        self.last_timestamp = {} # ID가 마지막으로 들어온 시간
+        self.id_periods = {}    # ID 최근 주기
+
+        # period, frequency avg
+        self.period_sum = {}
+        self.period_count = {}
 
         # message running
         self.is_running = True
@@ -163,6 +234,7 @@ class MainWindow(QMainWindow):
         control_layout.addWidget(self.visible_label)
 
         main_layout.addLayout(control_layout)
+        main_layout.addWidget(self.stats_table)
         main_layout.addWidget(self.table)
 
         ### Signal ###
@@ -249,6 +321,46 @@ class MainWindow(QMainWindow):
                 border: 2px solid #FFFFFF;
             }
 
+            QPushButton {
+                background-color: rgba(0, 0, 0, 200);
+                color: #FFFFFF;
+                border: 1px solid #FFFFFF;
+                border-radius: 4px;
+                padding: 5px 12px;
+            }
+
+            QPushButton:hover {
+                background-color: rgba(60, 60, 60, 220);
+            }
+
+            QPushButton:disabled {
+                color: #888888;
+                border: 1px solid #666666;
+            }
+
+            QComboBox {
+                background-color: rgba(0, 0, 0, 220);
+                color: #FFFFFF;
+                border: 1px solid #FFFFFF;
+                border-radius: 4px;
+                padding: 5px 30px 5px 10px;
+                min-width: 80px;
+            }
+
+            QComboBox::drop-down {
+                border: none;
+                width: 30px;
+            }
+
+            QComboBox QAbstractItemView {
+                background-color: #111111;
+                color: #FFFFFF;
+                border: 1px solid #FFFFFF;
+                selection-background-color: #444444;
+                selection-color: #FFFFFF;
+                padding: 4px;
+            }
+
             """
         )
 
@@ -322,9 +434,40 @@ class MainWindow(QMainWindow):
 
         ### message ###
         self.message_count += 1
+        
         self.total_label.setText(
             f"Total: {self.message_count}"
         )
+
+        ### can_id_counts ###
+        if can_id not in self.id_counts:
+            self.id_counts[can_id] = 1
+        else:
+            self.id_counts[can_id] += 1
+
+        ### period ###
+        if can_id in self.last_timestamp:
+            period = timestamp - self.last_timestamp[can_id]
+
+            if can_id not in self.period_sum:
+                self.period_sum[can_id] = 0
+                self.period_count[can_id] = 0
+
+            self.period_sum[can_id] += period
+            self.period_count[can_id] += 1
+
+            average_period = (
+                self.period_sum[can_id]
+                / self.period_count[can_id]
+            )
+            self.id_periods[can_id] = average_period
+
+        self.last_timestamp[can_id] = timestamp
+
+        self.update_statistics()
+
+
+
 
         self.apply_filter_to_row(row)
 
@@ -373,7 +516,8 @@ class MainWindow(QMainWindow):
     def apply_filter(self):
         for row in range(self.table.rowCount()):
             self.apply_filter_to_row(row)
-            self.update_visible_count()
+
+        self.update_visible_count()
 
 
     def update_visible_count(self):
@@ -392,6 +536,11 @@ class MainWindow(QMainWindow):
     def clear_table(self):
         self.table.setRowCount(0)
         self.message_count = 0
+        self.id_counts.clear()
+        self.last_timestamp.clear()
+        self.id_periods.clear()
+        self.period_sum.clear()
+        self.period_count.clear()
 
         self.total_label.setText(
             "Total: 0"
@@ -399,6 +548,8 @@ class MainWindow(QMainWindow):
         self.visible_label.setText(
             "Visible: 0"
         )
+
+        self.update_statistics()
 
     # stop
     def stop_receiving(self):
@@ -414,5 +565,51 @@ class MainWindow(QMainWindow):
         self.start_button.setEnabled(False)
         self.stop_button.setEnabled(True)
 
+    def update_statistics(self):
+        ids = [
+            "0x100",
+            "0x101",
+            "0x102"
+        ]
 
-    
+        for row, can_id in enumerate(ids):
+
+            count = self.id_counts.get(
+                can_id,
+                0
+            )
+
+            period = self.id_periods.get(
+                can_id,
+                0
+            )
+
+            frequency = (
+                1 / period
+                if period > 0
+                else 0
+            )
+
+            self.stats_table.setItem(
+                row,
+                1,
+                QTableWidgetItem(
+                    str(count)
+                )
+            )
+
+            self.stats_table.setItem(
+                row,
+                2,
+                QTableWidgetItem(
+                    f"{period:.3f}s"
+                )
+            )
+
+            self.stats_table.setItem(
+                row,
+                3,
+                QTableWidgetItem(
+                    f"{frequency:.1f}Hz"
+                )
+            )
