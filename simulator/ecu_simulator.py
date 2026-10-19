@@ -8,9 +8,14 @@ def run_simulator():
         channel="canscope"
     )
 
-    rpm = 1000
-    speed = 10
+    rpm = 900
+    speed = 0
     battery = 100
+
+    rpm_direction = 1
+    speed_direction = 1
+
+    battery_count = 0
 
     while True:
         rpm_data = rpm.to_bytes(
@@ -50,14 +55,29 @@ def run_simulator():
         bus.send(speed_message)
         bus.send(battery_message)
 
-        rpm += 100
-        speed += 1
+        # RPM 가속 / 감속
+        rpm += 150 * rpm_direction
 
-        if rpm > 3000:
-            rpm = 1000
-            battery -= 1
+        if rpm >= 3500:
+            rpm_direction = -1
+        elif rpm <= 900:
+            rpm_direction = 1
 
-        if speed > 30:
-            speed > 10
+        # Speed 가속 / 감속
+        speed += 3 * speed_direction
+
+        if speed >= 80:
+            speed_direction = -1
+        elif speed <= 0:
+            speed = 0
+            speed_direction = 1
+
+        # Battery는 천천히 감소
+        battery_count += 1
+
+        if battery_count >= 20:
+            if battery > 0:
+                battery -= 1
+            battery_count = 0
 
         time.sleep(0.5)
