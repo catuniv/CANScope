@@ -2,6 +2,7 @@ import threading
 from PySide6.QtCore import Signal
 from PySide6.QtGui import QPixmap, QPainter, QColor, QPalette
 from PySide6.QtCore import Qt
+import pyqtgraph as pg
 from PySide6.QtWidgets import (
     QMainWindow,
     QTableWidget,
@@ -167,16 +168,19 @@ class MainWindow(QMainWindow):
         self.analyzer_button = QPushButton("Analyzer")
         self.dashboard_button = QPushButton("Dashboard")
         self.statistics_button = QPushButton("Statistics")
+        self.graph_button = QPushButton("Graph")
 
         self.analyzer_button.setCheckable(True)
         self.dashboard_button.setCheckable(True)
         self.statistics_button.setCheckable(True)
+        self.graph_button.setCheckable(True)
 
         self.analyzer_button.setChecked(True)
 
         self.analyzer_button.setObjectName("menuButton")
         self.dashboard_button.setObjectName("menuButton")
         self.statistics_button.setObjectName("menuButton")
+        self.graph_button.setObjectName("menuButton")
 
         # Auto Scroll init
         self.auto_scroll_checkbox = QCheckBox("Auto Scroll")
@@ -296,6 +300,18 @@ class MainWindow(QMainWindow):
         self.period_sum = {}
         self.period_count = {}
 
+        # RPM Graph Data
+        self.rpm_times = []
+        self.rpm_values = []
+
+        # Speed Graph Data
+        self.speed_times = []
+        self.speed_values = []
+
+        # Battery Graph Data
+        self.battery_times = []
+        self.battery_values = []
+
         # message running
         self.is_running = True
 
@@ -341,10 +357,6 @@ class MainWindow(QMainWindow):
             Qt.AlignmentFlag.AlignCenter
         )
         sidebar_layout.addWidget(
-            title_label
-        )
-
-        sidebar_layout.addWidget(
             self.analyzer_button
         )
 
@@ -356,18 +368,194 @@ class MainWindow(QMainWindow):
             self.statistics_button
         )
 
-        sidebar_layout.addWidget(title_label)
+        sidebar_layout.addWidget(
+            self.graph_button
+        )
+
+        sidebar_layout.addStretch()
+
+        sidebar_layout.addWidget(
+            title_label
+        )
 
         # Stacked Widget 생성
         self.stacked_widget = QStackedWidget()
         self.analyzer_page = QWidget()
         self.dashboard_page = QWidget()
         self.statistics_page = QWidget()
+        self.graph_page = QWidget()
+
+        # Graph Widget 생성
+        self.rpm_graph = pg.PlotWidget()
+        self.rpm_graph.setBackground(
+            (10, 10, 10)
+        )
+
+        self.rpm_graph.setTitle(
+            "RPM Real-Time Graph"
+        )
+        self.rpm_graph.setLabel(
+            "left",
+            "RPM"
+        )
+        self.rpm_graph.setLabel(
+            "bottom",
+            "Time"
+        )
+        self.rpm_graph.showGrid(
+            x=True,
+            y=True,
+            alpha=0.3
+        )
+
+        axis_pen = pg.mkPen(
+            color=(220, 220, 220)
+        )
+
+        self.rpm_graph.getAxis("left").setPen(
+            axis_pen
+        )
+
+        self.rpm_graph.getAxis("bottom").setPen(
+            axis_pen
+        )
+
+        self.rpm_graph.getAxis("left").setTextPen(
+            axis_pen
+        )
+
+        self.rpm_graph.getAxis("bottom").setTextPen(
+            axis_pen
+        )
+
+        self.rpm_curve = self.rpm_graph.plot(
+            [],
+            [],
+            pen=pg.mkPen(
+                color=(0, 255, 255),
+                width=3
+            ),
+            symbol="o",
+            symbolSize=5
+        )
+
+        # Speed Graph
+        self.speed_graph = pg.PlotWidget()
+
+        self.speed_graph.setBackground(
+            (10, 10, 10)
+        )
+
+        self.speed_graph.setTitle(
+            "Speed Real-time Graph"
+        )
+
+        self.speed_graph.setLabel(
+            "left",
+            "Speed",
+            units="km/h"
+        )
+
+        self.speed_graph.setLabel(
+            "bottom",
+            "Time"
+        )
+
+        self.speed_graph.showGrid(
+            x=True,
+            y=True,
+            alpha=0.3
+        )
+
+        self.speed_graph.getAxis("left").setPen(
+            axis_pen
+        )
+
+        self.speed_graph.getAxis("bottom").setPen(
+            axis_pen
+        )
+
+        self.speed_graph.getAxis("left").setTextPen(
+            axis_pen
+        )
+
+        self.speed_graph.getAxis("bottom").setTextPen(
+            axis_pen
+        )
+
+        self.speed_curve = self.speed_graph.plot(
+            [],
+            [],
+            pen=pg.mkPen(
+                color=(255, 180, 0),
+                width=3
+            ),
+            symbol="o",
+            symbolSize=5
+        )
+
+        # Battery Graph
+        self.battery_graph = pg.PlotWidget()
+
+        self.battery_graph.setBackground(
+            (10, 10, 10)
+        )
+
+        self.battery_graph.setTitle(
+            "Battery Real-time Graph"
+        )
+
+        self.battery_graph.setLabel(
+            "left",
+            "Battery",
+            units="%"
+        )
+
+        self.battery_graph.setLabel(
+            "bottom",
+            "Time"
+        )
+
+        self.battery_graph.showGrid(
+            x=True,
+            y=True,
+            alpha=0.3
+        )
+
+        self.battery_graph.getAxis("left").setPen(
+            axis_pen
+        )
+
+        self.battery_graph.getAxis("bottom").setPen(
+            axis_pen
+        )
+
+        self.battery_graph.getAxis("left").setTextPen(
+            axis_pen
+        )
+
+        self.battery_graph.getAxis("bottom").setTextPen(
+            axis_pen
+        )
+
+        self.battery_curve = self.battery_graph.plot(
+            [],
+            [],
+            pen=pg.mkPen(
+                color=(120, 255, 120),
+                width=3
+            ),
+            symbol="o",
+            symbolSize=5
+        )
+
+
 
         # 각 페이지 Layout 생성
         analyzer_layout = QVBoxLayout()
         dashboard_page_layout = QVBoxLayout()
         statistics_layout = QVBoxLayout()
+        graph_layout = QVBoxLayout()
 
         # 페이지에 Layout 연결
         self.analyzer_page.setLayout(
@@ -382,6 +570,10 @@ class MainWindow(QMainWindow):
             statistics_layout
         )
 
+        self.graph_page.setLayout(
+            graph_layout
+        )
+
         # 각 페이지에 기존 위젯 배치
         # Analyzer Page
         analyzer_layout.addLayout(
@@ -390,6 +582,18 @@ class MainWindow(QMainWindow):
 
         analyzer_layout.addWidget(
             self.table
+        )
+
+        graph_layout.addWidget(
+            self.rpm_graph
+        )
+
+        graph_layout.addWidget(
+            self.speed_graph
+        )
+
+        graph_layout.addWidget(
+            self.battery_graph
         )
 
         # Dashboard Page
@@ -413,6 +617,10 @@ class MainWindow(QMainWindow):
 
         self.stacked_widget.addWidget(
             self.statistics_page
+        )
+
+        self.stacked_widget.addWidget(
+            self.graph_page
         )
 
         # Main Layout에는 메뉴 + Stacked Widget만
@@ -463,6 +671,10 @@ class MainWindow(QMainWindow):
 
         self.statistics_button.clicked.connect(
             lambda: self.change_page(2)
+        )
+
+        self.graph_button.clicked.connect(
+            lambda: self.change_page(3)
         )
 
 
@@ -718,13 +930,71 @@ class MainWindow(QMainWindow):
             value = decoded.replace("RPM=", "")
             self.rpm_value.setText(value)
 
+            rpm_text = (
+                decoded
+                .replace("RPM=", "")
+                .replace(" rpm", "")
+            )
+            rpm = float(rpm_text)
+
+            self.rpm_times.append(timestamp)
+            self.rpm_values.append(rpm)
+
+            if len(self.rpm_times) > 100:
+                self.rpm_times.pop(0)
+                self.rpm_values.pop(0)
+
+            self.rpm_curve.setData(
+                self.rpm_times,
+                self.rpm_values
+            )
+
         elif can_id == "0x101":
             value = decoded.replace("Speed=", "")
             self.speed_value.setText(value)
 
+            speed_text = (
+                decoded
+                .replace("Speed=", "")
+                .replace(" km/h", "")
+            )
+            speed = float(speed_text)
+
+            self.speed_times.append(timestamp)
+            self.speed_values.append(speed)
+
+            if len(self.speed_times) > 100:
+                self.speed_times.pop(0)
+                self.speed_values.pop(0)
+
+            self.speed_curve.setData(
+                self.speed_times,
+                self.speed_values
+            )
+
         elif can_id == "0x102":
             value = decoded.replace("Battery=", "")
             self.battery_value.setText(value)
+
+            battery_text = (
+                decoded
+                .replace("Battery=", "")
+                .replace(" %", "")
+            )
+
+            battery = float(battery_text)
+
+            self.battery_times.append(timestamp)
+            self.battery_values.append(battery)
+
+            if len(self.battery_times) > 100:
+                self.battery_times.pop(0)
+                self.battery_values.pop(0)
+
+            self.battery_curve.setData(
+                self.battery_times,
+                self.battery_values
+    )
 
 
 
@@ -801,6 +1071,18 @@ class MainWindow(QMainWindow):
         self.id_periods.clear()
         self.period_sum.clear()
         self.period_count.clear()
+
+        self.rpm_times.clear()
+        self.rpm_values.clear()
+        self.speed_times.clear()
+        self.speed_values.clear()
+        self.battery_times.clear()
+        self.battery_values.clear()
+
+
+        self.rpm_curve.setData([], [])
+        self.speed_curve.setData([], [])
+        self.battery_curve.setData([], [])
 
         self.total_label.setText(
             "Total: 0"
@@ -885,4 +1167,8 @@ class MainWindow(QMainWindow):
 
         self.statistics_button.setChecked(
             index == 2
+        )
+
+        self.graph_button.setChecked(
+            index == 3
         )
