@@ -1,4 +1,7 @@
 import threading
+import csv
+import os
+from datetime import datetime
 from PySide6.QtCore import Signal
 from PySide6.QtGui import QPixmap, QPainter, QColor, QPalette
 from PySide6.QtCore import Qt
@@ -16,7 +19,9 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QLineEdit,
-    QStackedWidget
+    QStackedWidget,
+    QListWidget,
+    QMessageBox
 )
 from core.receiver import run_receiver
 from simulator.ecu_simulator import run_simulator
@@ -169,11 +174,13 @@ class MainWindow(QMainWindow):
         self.dashboard_button = QPushButton("Dashboard")
         self.statistics_button = QPushButton("Statistics")
         self.graph_button = QPushButton("Graph")
+        self.logger_button = QPushButton("Logger")
 
         self.analyzer_button.setCheckable(True)
         self.dashboard_button.setCheckable(True)
         self.statistics_button.setCheckable(True)
         self.graph_button.setCheckable(True)
+        self.logger_button.setCheckable(True)
 
         self.analyzer_button.setChecked(True)
 
@@ -181,6 +188,103 @@ class MainWindow(QMainWindow):
         self.dashboard_button.setObjectName("menuButton")
         self.statistics_button.setObjectName("menuButton")
         self.graph_button.setObjectName("menuButton")
+        self.logger_button.setObjectName("menuButton")
+
+        # Logger Button 
+        self.start_log_button = QPushButton("Start Logging")
+        self.stop_log_button = QPushButton("Stop Logging")
+
+        self.log_status_label = QLabel(
+            "Logging: OFF"
+        )
+
+        self.stop_log_button.setEnabled(False)
+
+        # Logger File List
+        self.refresh_log_button = QPushButton(
+            "Refresh Logs"
+        )
+        self.log_list = QListWidget()
+
+        self.delete_log_button = QPushButton(
+            "Delete Selected Log"
+        )
+
+        self.selected_log_label = QLabel(
+            "Selected: None"
+        )
+
+        self.log_list.setStyleSheet(
+            """
+            QListWidget {
+                background-color: rgba(0, 0, 0, 220);
+                color: #FFFFFF;
+                border: 1px solid #FFFFFF;
+            }
+
+            QListWidget::item {
+                color: #FFFFFF;
+                padding: 6px;
+            }
+
+            QListWidget::item:selected {
+                background-color: #444444;
+                color: #FFFFFF;
+            }
+
+            QListWidget::item:hover {
+                background-color: rgba(255, 255, 255, 30);
+            }
+            """
+        )
+
+        # Logger Preview Table
+        self.log_preview_table = QTableWidget()
+        self.log_preview_table.setColumnCount(5)
+
+        self.log_preview_table.setHorizontalHeaderLabels(
+            [
+                "Time",
+                "ID",
+                "DLC",
+                "DATA",
+                "Decoded"
+            ]
+        )
+
+        self.log_preview_table.verticalHeader().setVisible(False)
+
+        self.log_preview_table.setEditTriggers(
+            QTableWidget.EditTrigger.NoEditTriggers
+            )
+
+        preview_header = self.log_preview_table.horizontalHeader()
+
+        preview_header.setSectionResizeMode(
+            0,
+            QHeaderView.ResizeMode.ResizeToContents
+        )
+
+        preview_header.setSectionResizeMode(
+            1,
+            QHeaderView.ResizeMode.ResizeToContents
+        )
+
+        preview_header.setSectionResizeMode(
+            2,
+            QHeaderView.ResizeMode.ResizeToContents
+        )
+
+        preview_header.setSectionResizeMode(
+            3,
+            QHeaderView.ResizeMode.Stretch
+        )
+
+        preview_header.setSectionResizeMode(
+            4,
+            QHeaderView.ResizeMode.Stretch
+        )
+        
 
         # Auto Scroll init
         self.auto_scroll_checkbox = QCheckBox("Auto Scroll")
@@ -312,6 +416,11 @@ class MainWindow(QMainWindow):
         self.battery_times = []
         self.battery_values = []
 
+        # Logger
+        self.is_logging = False
+        self.log_file = None
+        self.csv_writer = None
+
         # message running
         self.is_running = True
 
@@ -372,6 +481,10 @@ class MainWindow(QMainWindow):
             self.graph_button
         )
 
+        sidebar_layout.addWidget(
+            self.logger_button
+        )
+
         sidebar_layout.addStretch()
 
         sidebar_layout.addWidget(
@@ -384,6 +497,7 @@ class MainWindow(QMainWindow):
         self.dashboard_page = QWidget()
         self.statistics_page = QWidget()
         self.graph_page = QWidget()
+        self.logger_page = QWidget()
 
         # Graph Widget 생성
         self.rpm_graph = pg.PlotWidget()
@@ -556,6 +670,7 @@ class MainWindow(QMainWindow):
         dashboard_page_layout = QVBoxLayout()
         statistics_layout = QVBoxLayout()
         graph_layout = QVBoxLayout()
+        logger_layout = QVBoxLayout()
 
         # 페이지에 Layout 연결
         self.analyzer_page.setLayout(
@@ -572,6 +687,10 @@ class MainWindow(QMainWindow):
 
         self.graph_page.setLayout(
             graph_layout
+        )
+
+        self.logger_page.setLayout(
+            logger_layout
         )
 
         # 각 페이지에 기존 위젯 배치
@@ -595,6 +714,34 @@ class MainWindow(QMainWindow):
         graph_layout.addWidget(
             self.battery_graph
         )
+
+        # Logger Page
+        logger_layout.addWidget(
+            self.log_status_label
+        )
+        logger_layout.addWidget(
+            self.start_log_button
+        )
+        logger_layout.addWidget(
+            self.stop_log_button
+        )
+        logger_layout.addWidget(
+            self.refresh_log_button
+        )
+        logger_layout.addWidget(
+            self.log_list
+        )
+        logger_layout.addWidget(
+            self.log_preview_table
+        )
+        logger_layout.addWidget(
+            self.delete_log_button
+        )
+        logger_layout.addWidget(
+            self.selected_log_label
+        )
+
+        logger_layout.addStretch
 
         # Dashboard Page
         dashboard_page_layout.addStretch()
@@ -621,6 +768,10 @@ class MainWindow(QMainWindow):
 
         self.stacked_widget.addWidget(
             self.graph_page
+        )
+
+        self.stacked_widget.addWidget(
+            self.logger_page
         )
 
         # Main Layout에는 메뉴 + Stacked Widget만
@@ -675,6 +826,31 @@ class MainWindow(QMainWindow):
 
         self.graph_button.clicked.connect(
             lambda: self.change_page(3)
+        )
+
+        self.logger_button.clicked.connect(
+            lambda: self.change_page(4)
+        )
+
+        self.start_log_button.clicked.connect(
+            self.start_logging
+        )
+        self.stop_log_button.clicked.connect(
+            self.stop_logging
+        )
+
+        self.refresh_log_button.clicked.connect(
+            self.refresh_log_list
+        )
+
+        self.log_list.itemDoubleClicked.connect(
+            self.load_log_file
+        )
+        self.log_list.itemClicked.connect(
+            self.select_log_file
+        )
+        self.delete_log_button.clicked.connect(
+            self.delete_selected_log
         )
 
 
@@ -820,6 +996,32 @@ class MainWindow(QMainWindow):
                 border-left: 3px solid #FFFFFF;
                 font-weight: bold;
             }
+            QMessageBox {
+                background-color: #2B2B2B;
+            }
+
+            QMessageBox QLabel {
+                color: #FFFFFF;
+                background-color: transparent;
+                font-size: 14px;
+            }
+
+            QMessageBox QPushButton {
+                background-color: #444444;
+                color: #FFFFFF;
+                border: 1px solid #888888;
+                border-radius: 5px;
+                padding: 7px 20px;
+                min-width: 80px;
+            }
+
+            QMessageBox QPushButton:hover {
+                background-color: #5A5A5A;
+            }
+
+            QMessageBox QPushButton:pressed {
+                background-color: #666666;
+            }
 
             """
         )
@@ -838,6 +1040,7 @@ class MainWindow(QMainWindow):
             daemon=True
         )
 
+        self.refresh_log_list()
         receiver_thread.start()
         simulator_thread.start()
 
@@ -890,6 +1093,19 @@ class MainWindow(QMainWindow):
             4,
             QTableWidgetItem(decoded)
         )
+
+        # CAN Logger
+        if self.is_logging:
+            self.csv_writer.writerow(
+                [
+                    f"{timestamp:.3f}",
+                    can_id,
+                    dlc,
+                    data,
+                    decoded
+                ]
+            )
+            self.log_file.flush()
 
 
         ### message ###
@@ -1102,6 +1318,7 @@ class MainWindow(QMainWindow):
 
         self.start_button.setEnabled(True)
         self.stop_button.setEnabled(False)
+        self.refresh_log_list()
 
     # start
     def start_receiving(self):
@@ -1172,3 +1389,183 @@ class MainWindow(QMainWindow):
         self.graph_button.setChecked(
             index == 3
         )
+
+        self.logger_button.setChecked(
+            index == 4
+        )
+
+    def start_logging(self):
+        os.makedirs(
+            "logs",
+            exist_ok=True
+        )
+
+        current_time = datetime.now().strftime(
+            "%Y-%m-%d_%H-%M-%S"
+        )
+        file_name = (
+            f"logs/can_log_{current_time}.csv"
+        )
+        self.log_file = open(
+            file_name,
+            "w",
+            newline=""
+        )
+        self.csv_writer = csv.writer(
+            self.log_file
+        )
+        self.csv_writer.writerow(
+            [
+                "Time",
+                "ID",
+                "DLC",
+                "DATA",
+                "Decoded"
+            ]
+        )
+
+        self.is_logging = True
+        self.log_status_label.setText(
+            f"Logging: ON\n{file_name}"
+        )
+        self.start_log_button.setEnabled(False)
+        self.stop_log_button.setEnabled(True)
+
+    def stop_logging(self):
+        self.is_logging = False
+        if self.log_file is not None:
+            self.log_file.close()
+
+        self.log_file = None
+        self.csv_writer = None
+
+        self.log_status_label.setText(
+            "Logging: OFF"
+        )
+
+        self.start_log_button.setEnabled(True)
+        self.stop_log_button.setEnabled(False)
+
+
+    def refresh_log_list(self):
+        self.log_list.clear()
+        if not os.path.exists("logs"):
+            return
+
+        files = os.listdir("logs")
+
+        csv_files = []
+
+        for file_name in files:
+            if file_name.endswith(".csv"):
+                csv_files.append(file_name)
+
+        csv_files.sort(
+            reverse=True
+        )
+
+        for file_name in csv_files:
+            self.log_list.addItem(
+                file_name
+            )
+
+    def load_log_file(self, item):
+
+        file_name = item.text()
+
+        file_path = os.path.join(
+            "logs",
+            file_name
+        )
+
+        self.log_preview_table.setRowCount(0)
+
+        with open(
+            file_path,
+            "r",
+            newline=""
+        ) as file:
+
+            reader = csv.reader(file)
+
+            next(reader, None)
+
+            for row_data in reader:
+
+                row = self.log_preview_table.rowCount()
+                self.log_preview_table.insertRow(row)
+
+                for column, value in enumerate(row_data):
+
+                    self.log_preview_table.setItem(
+                        row,
+                        column,
+                        QTableWidgetItem(value)
+                    )
+
+    def select_log_file(self, item):
+        file_name = item.text()
+
+        self.selected_log_label.setText(
+            f"Selected: {file_name}"
+        )
+
+    def delete_selected_log(self):
+
+        item = self.log_list.currentItem()
+
+        if item is None:
+            QMessageBox.information(
+                self,
+                "No Selection",
+                "삭제할 로그 파일을 먼저 선택하세요."
+            )
+            return
+
+        file_name = item.text()
+
+        message_box = QMessageBox(self)
+
+        message_box.setWindowTitle(
+            "Delete Log"
+        )
+
+        message_box.setText(
+            f"{file_name}\n\n"
+            "정말 삭제하시겠습니까?\n"
+            "Are you sure you want to delete this log?"
+        )
+
+        message_box.setIcon(
+            QMessageBox.Icon.NoIcon
+        )
+
+        message_box.setStandardButtons(
+            QMessageBox.StandardButton.Yes
+            | QMessageBox.StandardButton.No
+        )
+
+        message_box.setDefaultButton(
+            QMessageBox.StandardButton.No
+        )
+
+        result = message_box.exec()
+
+        if result != QMessageBox.StandardButton.Yes:
+            return
+
+        file_path = os.path.join(
+            "logs",
+            file_name
+        )
+
+        if os.path.exists(file_path):
+            os.remove(file_path)
+
+        self.log_preview_table.setRowCount(0)
+
+        self.selected_log_label.setText(
+            "Selected: None"
+        )
+
+        self.refresh_log_list()
