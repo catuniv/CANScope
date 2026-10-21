@@ -2,6 +2,7 @@ import threading
 import csv
 import os
 from datetime import datetime
+import cantools
 from PySide6.QtCore import Signal
 from PySide6.QtGui import QPixmap, QPainter, QColor, QPalette
 from PySide6.QtCore import Qt
@@ -21,7 +22,8 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QStackedWidget,
     QListWidget,
-    QMessageBox
+    QMessageBox,
+    QFileDialog
 )
 from core.receiver import run_receiver
 from simulator.ecu_simulator import run_simulator
@@ -63,6 +65,11 @@ class MainWindow(QMainWindow):
 
         self.setWindowTitle("CANScope")
         self.resize(1000, 600)
+
+        # DBC Database
+        self.db = cantools.database.load_file(
+            "dbc/canscope.dbc"
+        )
 
         self.table = QTableWidget()
         self.table.setColumnCount(5)
@@ -175,12 +182,14 @@ class MainWindow(QMainWindow):
         self.statistics_button = QPushButton("Statistics")
         self.graph_button = QPushButton("Graph")
         self.logger_button = QPushButton("Logger")
+        self.dbc_button = QPushButton("DBC")
 
         self.analyzer_button.setCheckable(True)
         self.dashboard_button.setCheckable(True)
         self.statistics_button.setCheckable(True)
         self.graph_button.setCheckable(True)
         self.logger_button.setCheckable(True)
+        self.dbc_button.setCheckable(True)
 
         self.analyzer_button.setChecked(True)
 
@@ -189,6 +198,7 @@ class MainWindow(QMainWindow):
         self.statistics_button.setObjectName("menuButton")
         self.graph_button.setObjectName("menuButton")
         self.logger_button.setObjectName("menuButton")
+        self.dbc_button.setObjectName("menuButton")
 
         # Logger Button 
         self.start_log_button = QPushButton("Start Logging")
@@ -236,6 +246,14 @@ class MainWindow(QMainWindow):
                 background-color: rgba(255, 255, 255, 30);
             }
             """
+        )
+
+        # DBC
+        self.load_dbc_button = QPushButton(
+            "Load DBC"
+        )
+        self.dbc_status_label = QLabel(
+            "DBC: dbc/canscope.dbc"
         )
 
         # Logger Preview Table
@@ -491,6 +509,10 @@ class MainWindow(QMainWindow):
             title_label
         )
 
+        sidebar_layout.addWidget(
+            self.dbc_button
+        )
+
         # Stacked Widget 생성
         self.stacked_widget = QStackedWidget()
         self.analyzer_page = QWidget()
@@ -498,6 +520,7 @@ class MainWindow(QMainWindow):
         self.statistics_page = QWidget()
         self.graph_page = QWidget()
         self.logger_page = QWidget()
+        self.dbc_page = QWidget()
 
         # Graph Widget 생성
         self.rpm_graph = pg.PlotWidget()
@@ -671,6 +694,7 @@ class MainWindow(QMainWindow):
         statistics_layout = QVBoxLayout()
         graph_layout = QVBoxLayout()
         logger_layout = QVBoxLayout()
+        dbc_layout = QVBoxLayout()
 
         # 페이지에 Layout 연결
         self.analyzer_page.setLayout(
@@ -691,6 +715,10 @@ class MainWindow(QMainWindow):
 
         self.logger_page.setLayout(
             logger_layout
+        )
+
+        self.dbc_page.setLayout(
+            dbc_layout
         )
 
         # 각 페이지에 기존 위젯 배치
@@ -743,6 +771,15 @@ class MainWindow(QMainWindow):
 
         logger_layout.addStretch
 
+        # DBC Page
+        dbc_layout.addWidget(
+            self.dbc_status_label
+        )
+        dbc_layout.addWidget(
+            self.load_dbc_button
+        )
+        dbc_layout.addStretch()
+
         # Dashboard Page
         dashboard_page_layout.addStretch()
         dashboard_page_layout.addLayout(dashboard_layout)
@@ -772,6 +809,10 @@ class MainWindow(QMainWindow):
 
         self.stacked_widget.addWidget(
             self.logger_page
+        )
+
+        self.stacked_widget.addWidget(
+            self.dbc_page
         )
 
         # Main Layout에는 메뉴 + Stacked Widget만
@@ -830,6 +871,14 @@ class MainWindow(QMainWindow):
 
         self.logger_button.clicked.connect(
             lambda: self.change_page(4)
+        )
+
+        self.dbc_button.clicked.connect(
+            lambda: self.change_page(5)
+        )
+
+        self.load_dbc_button.clicked.connect(
+            self.load_dbc_file
         )
 
         self.start_log_button.clicked.connect(
@@ -1045,7 +1094,57 @@ class MainWindow(QMainWindow):
         simulator_thread.start()
 
 
+    def decode_with_dbc(
+        self,
+        can_id,
+        data
+    ):
+        try:
+            frame_id = int(
+                can_id,
+                16
+            )
 
+            data_bytes = bytes.fromhex(
+                data
+            )
+
+            message = self.db.get_message_by_frame_id(
+                frame_id
+            )
+
+            decoded_data = message.decode(
+                data_bytes
+            )
+
+            result_parts = []
+
+            for signal in message.signals:
+
+                signal_name = signal.name
+
+                if signal_name not in decoded_data:
+                    continue
+
+                value = decoded_data[
+                    signal_name
+                ]
+
+                unit = signal.unit
+
+                if unit is None:
+                    unit = ""
+
+                result_parts.append(
+                    f"{signal_name}={value:.0f} {unit}"
+                )
+
+            return ", ".join(
+                result_parts
+            )
+
+        except Exception:
+            return "DBC Decode Error"
 
 
     def add_message(
@@ -1061,7 +1160,14 @@ class MainWindow(QMainWindow):
         if not self.is_running:
             return
 
+        # DBC Decode
+        decoded = self.decode_with_dbc(
+            can_id,
+            data
+        )
+
         row = self.table.rowCount()
+
         self.table.insertRow(row)
 
         self.table.setItem(
@@ -1143,15 +1249,24 @@ class MainWindow(QMainWindow):
         self.update_statistics()
 
         if can_id == "0x100":
-            value = decoded.replace("RPM=", "")
-            self.rpm_value.setText(value)
+            value = decoded.replace(
+                "EngineRPM=",
+                ""
+            )
+
+            self.rpm_value.setText(
+                value
+            )
 
             rpm_text = (
                 decoded
-                .replace("RPM=", "")
+                .replace("EngineRPM=", "")
                 .replace(" rpm", "")
             )
-            rpm = float(rpm_text)
+
+            rpm = float(
+                rpm_text
+            )
 
             self.rpm_times.append(timestamp)
             self.rpm_values.append(rpm)
@@ -1166,12 +1281,18 @@ class MainWindow(QMainWindow):
             )
 
         elif can_id == "0x101":
-            value = decoded.replace("Speed=", "")
-            self.speed_value.setText(value)
+            value = decoded.replace(
+                "VehicleSpeed=",
+                ""
+            )
+
+            self.speed_value.setText(
+                value
+            )
 
             speed_text = (
                 decoded
-                .replace("Speed=", "")
+                .replace("VehicleSpeed=", "")
                 .replace(" km/h", "")
             )
             speed = float(speed_text)
@@ -1189,12 +1310,18 @@ class MainWindow(QMainWindow):
             )
 
         elif can_id == "0x102":
-            value = decoded.replace("Battery=", "")
-            self.battery_value.setText(value)
+            value = decoded.replace(
+                "BatteryLevel=",
+                ""
+            )
+
+            self.battery_value.setText(
+                value
+            )
 
             battery_text = (
                 decoded
-                .replace("Battery=", "")
+                .replace("BatteryLevel=", "")
                 .replace(" %", "")
             )
 
@@ -1394,6 +1521,10 @@ class MainWindow(QMainWindow):
             index == 4
         )
 
+        self.dbc_button.setChecked(
+            index == 5
+        )
+
     def start_logging(self):
         os.makedirs(
             "logs",
@@ -1569,3 +1700,41 @@ class MainWindow(QMainWindow):
         )
 
         self.refresh_log_list()
+
+    def load_dbc_file(self):
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select DBC File",
+            "dbc",
+            "DBC Files (*.dbc)"
+        )
+
+        if file_path == "":
+            return
+
+        try:
+            new_db = cantools.database.load_file(
+                file_path
+            )
+
+            self.db = new_db
+
+            self.dbc_status_label.setText(
+                f"DBC: {file_path}"
+            )
+
+            QMessageBox.information(
+                self,
+                "DBC Loaded",
+                "DBC 파일을 성공적으로 불러왔습니다.\n"
+                "DBC file loaded successfully."
+            )
+
+        except Exception as error:
+
+            QMessageBox.warning(
+                self,
+                "DBC Load Error",
+                f"DBC 파일을 불러올 수 없습니다.\n\n"
+                f"{error}"
+            )

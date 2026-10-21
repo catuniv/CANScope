@@ -20,7 +20,7 @@ def run_simulator():
     while True:
         rpm_data = rpm.to_bytes(
             2,
-            byteorder="big"
+            byteorder="little"
         )
 
         rpm_message = can.Message(
@@ -31,7 +31,7 @@ def run_simulator():
 
         speed_data = speed.to_bytes(
             1,
-            byteorder = "big"
+            byteorder = "little"
         )
 
         speed_message = can.Message(
@@ -42,7 +42,7 @@ def run_simulator():
 
         battery_data = battery.to_bytes(
             1,
-            byteorder = "big"
+            byteorder = "little"
         )
 
         battery_message = can.Message(
