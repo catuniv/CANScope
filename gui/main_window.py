@@ -7,6 +7,7 @@ from PySide6.QtCore import Signal
 from PySide6.QtGui import QPixmap, QPainter, QColor, QPalette
 from PySide6.QtCore import Qt
 import pyqtgraph as pg
+import can
 from PySide6.QtWidgets import (
     QMainWindow,
     QTableWidget,
@@ -69,6 +70,12 @@ class MainWindow(QMainWindow):
         # DBC Database
         self.db = cantools.database.load_file(
             "dbc/canscope.dbc"
+        )
+
+        # CAN Transmit Bus
+        self.tx_bus = can.Bus(
+            interface="virtual",
+            channel="canscope"
         )
 
         self.table = QTableWidget()
@@ -183,6 +190,7 @@ class MainWindow(QMainWindow):
         self.graph_button = QPushButton("Graph")
         self.logger_button = QPushButton("Logger")
         self.dbc_button = QPushButton("DBC")
+        self.transmit_button = QPushButton("Transmit")
 
         self.analyzer_button.setCheckable(True)
         self.dashboard_button.setCheckable(True)
@@ -190,6 +198,7 @@ class MainWindow(QMainWindow):
         self.graph_button.setCheckable(True)
         self.logger_button.setCheckable(True)
         self.dbc_button.setCheckable(True)
+        self.transmit_button.setCheckable(True)
 
         self.analyzer_button.setChecked(True)
 
@@ -199,6 +208,7 @@ class MainWindow(QMainWindow):
         self.graph_button.setObjectName("menuButton")
         self.logger_button.setObjectName("menuButton")
         self.dbc_button.setObjectName("menuButton")
+        self.transmit_button.setObjectName("menuButton")
 
         # Logger Button 
         self.start_log_button = QPushButton("Start Logging")
@@ -326,6 +336,69 @@ class MainWindow(QMainWindow):
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText(
             "Search ID / DATA / Decoded"
+        )
+
+        # CAN Transmit
+        self.tx_id_input = QLineEdit()
+        self.tx_data_input = QLineEdit()
+        self.tx_send_button = QPushButton("Send CAN Message")
+        self.tx_status_label = QLabel("Ready")
+        self.tx_history = QListWidget()
+        self.tx_history.setStyleSheet(
+        """
+        QListWidget {
+            background-color: rgba(0, 0, 0, 220);
+            color: #FFFFFF;
+            border: 1px solid #FFFFFF;
+        }
+
+        QListWidget::item {
+            color: #FFFFFF;
+            padding: 5px;
+        }
+        """
+    )
+
+        # Signal Value Input
+        self.tx_rpm_value_input = QLineEdit()
+        self.tx_speed_value_input = QLineEdit()
+        self.tx_battery_value_input = QLineEdit()
+
+        self.tx_rpm_value_input.setPlaceholderText(
+            "RPM value (ex. 2500)"
+        )
+
+        self.tx_speed_value_input.setPlaceholderText(
+            "Speed value (ex. 60)"
+        )
+
+        self.tx_battery_value_input.setPlaceholderText(
+            "Battery value (ex. 95)"
+        )
+
+        self.tx_rpm_send_button = QPushButton(
+            "Send RPM"
+        )
+
+        self.tx_speed_send_button = QPushButton(
+            "Send Speed"
+        )
+
+        self.tx_battery_send_button = QPushButton(
+            "Send Battery"
+        )
+
+
+        # CAN Transmit Preset
+        self.tx_rpm_button = QPushButton("RPM 3000")
+        self.tx_speed_button = QPushButton("Speed 50")
+        self.tx_battery_button = QPushButton("Battery 100")
+
+        self.tx_id_input.setPlaceholderText(
+            "CAN ID (ex. 0x100)"
+        )
+        self.tx_data_input.setPlaceholderText(
+            "DATA (ex. B8 0B)"
         )
 
         ############ Label ##############
@@ -503,15 +576,23 @@ class MainWindow(QMainWindow):
             self.logger_button
         )
 
+        sidebar_layout.addWidget(
+            self.dbc_button
+        )
+
+        sidebar_layout.addWidget(
+            self.transmit_button
+        )
+
         sidebar_layout.addStretch()
 
         sidebar_layout.addWidget(
             title_label
         )
 
-        sidebar_layout.addWidget(
-            self.dbc_button
-        )
+
+
+
 
         # Stacked Widget 생성
         self.stacked_widget = QStackedWidget()
@@ -521,6 +602,7 @@ class MainWindow(QMainWindow):
         self.graph_page = QWidget()
         self.logger_page = QWidget()
         self.dbc_page = QWidget()
+        self.transmit_page = QWidget()
 
         # Graph Widget 생성
         self.rpm_graph = pg.PlotWidget()
@@ -695,6 +777,7 @@ class MainWindow(QMainWindow):
         graph_layout = QVBoxLayout()
         logger_layout = QVBoxLayout()
         dbc_layout = QVBoxLayout()
+        transmit_layout = QVBoxLayout()
 
         # 페이지에 Layout 연결
         self.analyzer_page.setLayout(
@@ -719,6 +802,10 @@ class MainWindow(QMainWindow):
 
         self.dbc_page.setLayout(
             dbc_layout
+        )
+
+        self.transmit_page.setLayout(
+            transmit_layout
         )
 
         # 각 페이지에 기존 위젯 배치
@@ -769,7 +856,7 @@ class MainWindow(QMainWindow):
             self.selected_log_label
         )
 
-        logger_layout.addStretch
+        logger_layout.addStretch()
 
         # DBC Page
         dbc_layout.addWidget(
@@ -779,6 +866,90 @@ class MainWindow(QMainWindow):
             self.load_dbc_button
         )
         dbc_layout.addStretch()
+
+
+
+        # Transmit Page
+        preset_layout = QHBoxLayout()
+
+        preset_layout.addWidget(
+            self.tx_rpm_button
+        )
+
+        preset_layout.addWidget(
+            self.tx_speed_button
+        )
+
+        preset_layout.addWidget(
+            self.tx_battery_button
+        )
+
+        transmit_layout.addWidget(
+            QLabel("CAN ID")
+        )
+
+        transmit_layout.addWidget(
+            self.tx_id_input
+        )
+
+        transmit_layout.addWidget(
+            QLabel("DATA")
+        )
+
+        transmit_layout.addWidget(
+            self.tx_data_input
+        )
+
+        transmit_layout.addWidget(
+            self.tx_send_button
+        )
+
+        transmit_layout.addWidget(
+            QLabel("Signal Value Test")
+        )
+
+        transmit_layout.addWidget(
+            self.tx_rpm_value_input
+        )
+
+        transmit_layout.addWidget(
+            self.tx_rpm_send_button
+        )
+
+        transmit_layout.addWidget(
+            self.tx_speed_value_input
+        )
+
+        transmit_layout.addWidget(
+            self.tx_speed_send_button
+        )
+
+        transmit_layout.addWidget(
+            self.tx_battery_value_input
+        )
+
+        transmit_layout.addWidget(
+            self.tx_battery_send_button
+        )
+
+
+        transmit_layout.addWidget(
+            self.tx_status_label
+        )
+
+        transmit_layout.addLayout(
+            preset_layout
+        )
+
+        transmit_layout.addStretch()
+
+        transmit_layout.addWidget(
+            QLabel("Transmit History")
+        )
+
+        transmit_layout.addWidget(
+            self.tx_history
+        )
 
         # Dashboard Page
         dashboard_page_layout.addStretch()
@@ -813,6 +984,10 @@ class MainWindow(QMainWindow):
 
         self.stacked_widget.addWidget(
             self.dbc_page
+        )
+
+        self.stacked_widget.addWidget(
+            self.transmit_page
         )
 
         # Main Layout에는 메뉴 + Stacked Widget만
@@ -875,6 +1050,39 @@ class MainWindow(QMainWindow):
 
         self.dbc_button.clicked.connect(
             lambda: self.change_page(5)
+        )
+
+        self.transmit_button.clicked.connect(
+            lambda: self.change_page(6)
+        )
+
+        self.tx_send_button.clicked.connect(
+            self.send_can_message
+        )
+
+        self.tx_rpm_send_button.clicked.connect(
+            self.send_rpm_value
+        )
+
+        self.tx_speed_send_button.clicked.connect(
+            self.send_speed_value
+        )
+
+        self.tx_battery_send_button.clicked.connect(
+            self.send_battery_value
+        )
+
+
+        self.tx_rpm_button.clicked.connect(
+            self.set_rpm_preset
+        )
+
+        self.tx_speed_button.clicked.connect(
+            self.set_speed_preset
+        )
+
+        self.tx_battery_button.clicked.connect(
+            self.set_battery_preset
         )
 
         self.load_dbc_button.clicked.connect(
@@ -1525,6 +1733,277 @@ class MainWindow(QMainWindow):
             index == 5
         )
 
+        self.transmit_button.setChecked(
+            index == 6
+        )
+
+    def send_can_message(self):
+
+        can_id_text = self.tx_id_input.text().strip()
+        data_text = self.tx_data_input.text().strip()
+
+        # 빈 입력 검사
+        if can_id_text == "":
+            self.tx_status_label.setText(
+                "Error: Please enter a CAN ID."
+            )
+            return
+
+        if data_text == "":
+            self.tx_status_label.setText(
+                "Error:Please enter DATA."
+            )
+            return
+
+        # CAN ID 검사
+        try:
+            can_id = int(
+                can_id_text,
+                16
+            )
+
+        except ValueError:
+            self.tx_status_label.setText(
+                "Error: Invalid CAN ID."
+            )
+            return
+
+        # Standard CAN ID 범위 검사
+        if can_id < 0 or can_id > 0x7FF:
+            self.tx_status_label.setText(
+                "Error: CAN ID must be between 0x000 and 0x7FF."
+            )
+            return
+
+        # DATA 검사
+        try:
+            data_bytes = bytes.fromhex(
+                data_text
+            )
+
+        except ValueError:
+            self.tx_status_label.setText(
+                "Error: DATA must be entered in hexadecimal format."
+            )
+            return
+
+        # Classical CAN은 최대 8 byte
+        if len(data_bytes) > 8:
+            self.tx_status_label.setText(
+                "Error: DATA must be 8 bytes or less."
+            )
+            return
+
+        # CAN Message 생성
+        message = can.Message(
+            arbitration_id=can_id,
+            data=data_bytes,
+            is_extended_id=False
+        )
+
+        try:
+            self.tx_bus.send(
+                message
+            )
+
+            self.tx_status_label.setText(
+                f"Sent: {can_id_text} / {data_text}"
+            )
+
+            self.tx_history.insertItem(
+                0,
+                f"{can_id_text} | {data_text.upper()}"
+            )
+
+            self.trim_tx_history()
+
+        except Exception as error:
+            self.tx_status_label.setText(
+                f"Send Error: {error}"
+            )
+
+    def trim_tx_history(self):
+        while self.tx_history.count() > 100:
+            self.tx_history.takeItem(
+                self.tx_history.count() - 1
+            )
+
+
+    def send_rpm_value(self):
+
+        try:
+            rpm = int(
+                self.tx_rpm_value_input.text()
+            )
+
+            if rpm < 0 or rpm > 8000:
+                self.tx_status_label.setText(
+                    "Error: RPM must be between 0 and 8000."
+                )
+                return
+
+            data_bytes = rpm.to_bytes(
+                2,
+                byteorder="little"
+            )
+
+            message = can.Message(
+                arbitration_id=0x100,
+                data=data_bytes,
+                is_extended_id=False
+            )
+
+            self.tx_bus.send(
+                message
+            )
+
+            data_text = data_bytes.hex(
+                " "
+            ).upper()
+
+            self.tx_history.insertItem(
+                0,
+                f"0x100 | {data_text} | RPM={rpm}"
+            )
+            self.trim_tx_history()
+
+            self.tx_status_label.setText(
+                f"Sent RPM: {rpm}"
+            )
+
+        except ValueError:
+            self.tx_status_label.setText(
+                "Error: RPM must be a number."
+            )
+
+    def send_speed_value(self):
+
+        try:
+            speed = int(
+                self.tx_speed_value_input.text()
+            )
+
+            if speed < 0 or speed > 255:
+                self.tx_status_label.setText(
+                    "Error: Speed must be between 0 and 255."
+                )
+                return
+
+            data_bytes = speed.to_bytes(
+                1,
+                byteorder="little"
+            )
+
+            message = can.Message(
+                arbitration_id=0x101,
+                data=data_bytes,
+                is_extended_id=False
+            )
+
+            self.tx_bus.send(
+                message
+            )
+
+            data_text = data_bytes.hex(
+                " "
+            ).upper()
+
+            self.tx_history.insertItem(
+                0,
+                f"0x101 | {data_text} | Speed={speed}"
+            )
+
+            self.trim_tx_history()
+
+            self.tx_status_label.setText(
+                f"Sent Speed: {speed} km/h"
+            )
+
+        except ValueError:
+            self.tx_status_label.setText(
+                "Error: Speed must be a number."
+            )
+
+    def send_battery_value(self):
+
+        try:
+            battery = int(
+                self.tx_battery_value_input.text()
+            )
+
+            if battery < 0 or battery > 100:
+                self.tx_status_label.setText(
+                    "Error: Battery must be between 0 and 100."
+                )
+                return
+
+            data_bytes = battery.to_bytes(
+                1,
+                byteorder="little"
+            )
+
+            message = can.Message(
+                arbitration_id=0x102,
+                data=data_bytes,
+                is_extended_id=False
+            )
+
+            self.tx_bus.send(
+                message
+            )
+
+            data_text = data_bytes.hex(
+                " "
+            ).upper()
+
+            self.tx_history.insertItem(
+                0,
+                f"0x102 | {data_text} | Battery={battery}"
+            )
+
+            self.trim_tx_history()
+
+            self.tx_status_label.setText(
+                f"Sent Battery: {battery}%"
+            )
+
+        except ValueError:
+            self.tx_status_label.setText(
+                "Error: Battery must be a number."
+            )
+
+    def set_rpm_preset(self):
+
+        self.tx_id_input.setText(
+            "0x100"
+        )
+
+        self.tx_data_input.setText(
+            "B8 0B"
+        )
+
+
+    def set_speed_preset(self):
+
+        self.tx_id_input.setText(
+            "0x101"
+        )
+
+        self.tx_data_input.setText(
+            "32"
+        )
+
+
+    def set_battery_preset(self):
+
+        self.tx_id_input.setText(
+            "0x102"
+        )
+
+        self.tx_data_input.setText(
+            "64"
+        )
+
     def start_logging(self):
         os.makedirs(
             "logs",
@@ -1576,6 +2055,7 @@ class MainWindow(QMainWindow):
 
         self.start_log_button.setEnabled(True)
         self.stop_log_button.setEnabled(False)
+        self.refresh_log_list()
 
 
     def refresh_log_list(self):
@@ -1738,3 +2218,13 @@ class MainWindow(QMainWindow):
                 f"DBC 파일을 불러올 수 없습니다.\n\n"
                 f"{error}"
             )
+
+    def closeEvent(self, event):
+
+        if self.log_file is not None:
+            self.log_file.close()
+
+        if self.tx_bus is not None:
+            self.tx_bus.shutdown()
+
+        event.accept()
