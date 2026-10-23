@@ -5,9 +5,10 @@ from datetime import datetime
 import cantools
 from PySide6.QtCore import Signal
 from PySide6.QtGui import QPixmap, QPainter, QColor, QPalette
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 import pyqtgraph as pg
 import can
+import time
 from PySide6.QtWidgets import (
     QMainWindow,
     QTableWidget,
@@ -191,6 +192,7 @@ class MainWindow(QMainWindow):
         self.logger_button = QPushButton("Logger")
         self.dbc_button = QPushButton("DBC")
         self.transmit_button = QPushButton("Transmit")
+        self.ecu_monitor_button = QPushButton("ECU Monitor")
 
         self.analyzer_button.setCheckable(True)
         self.dashboard_button.setCheckable(True)
@@ -199,6 +201,7 @@ class MainWindow(QMainWindow):
         self.logger_button.setCheckable(True)
         self.dbc_button.setCheckable(True)
         self.transmit_button.setCheckable(True)
+        self.ecu_monitor_button.setCheckable(True)
 
         self.analyzer_button.setChecked(True)
 
@@ -209,6 +212,8 @@ class MainWindow(QMainWindow):
         self.logger_button.setObjectName("menuButton")
         self.dbc_button.setObjectName("menuButton")
         self.transmit_button.setObjectName("menuButton")
+        self.ecu_monitor_button.setObjectName("menuButton")
+
 
         # Logger Button 
         self.start_log_button = QPushButton("Start Logging")
@@ -394,6 +399,118 @@ class MainWindow(QMainWindow):
         self.tx_speed_button = QPushButton("Speed 50")
         self.tx_battery_button = QPushButton("Battery 100")
 
+        # ECU Monitor
+        self.engine_ecu_status = QLabel(
+            "Engine ECU : OFFLINE"
+        )
+
+        self.vehicle_ecu_status = QLabel(
+            "Vehicle ECU : OFFLINE"
+        )
+
+        self.battery_ecu_status = QLabel(
+            "Battery ECU : OFFLINE"
+        )
+
+
+        self.engine_ecu_info = QLabel(
+            "Period: 0.000 s | Frequency: 0.0 Hz"
+        )
+
+        self.vehicle_ecu_info = QLabel(
+            "Period: 0.000 s | Frequency: 0.0 Hz"
+        )
+
+        self.battery_ecu_info = QLabel(
+            "Period: 0.000 s | Frequency: 0.0 Hz"
+        )
+
+
+        # Object Name
+        self.engine_ecu_status.setObjectName(
+            "ecuStatus"
+        )
+
+        self.vehicle_ecu_status.setObjectName(
+            "ecuStatus"
+        )
+
+        self.battery_ecu_status.setObjectName(
+            "ecuStatus"
+        )
+
+
+        self.engine_ecu_info.setObjectName(
+            "ecuInfo"
+        )
+
+        self.vehicle_ecu_info.setObjectName(
+            "ecuInfo"
+        )
+
+        self.battery_ecu_info.setObjectName(
+            "ecuInfo"
+        )
+
+        # ECU Monitor Card
+        self.engine_ecu_card = QWidget()
+        self.vehicle_ecu_card = QWidget()
+        self.battery_ecu_card = QWidget()
+
+        self.engine_ecu_card.setObjectName(
+            "ecuCard"
+        )
+
+        self.vehicle_ecu_card.setObjectName(
+            "ecuCard"
+        )
+
+        self.battery_ecu_card.setObjectName(
+            "ecuCard"
+        )
+
+        engine_ecu_layout = QVBoxLayout()
+        vehicle_ecu_layout = QVBoxLayout()
+        battery_ecu_layout = QVBoxLayout()
+
+        self.engine_ecu_card.setLayout(
+            engine_ecu_layout
+        )
+
+        self.vehicle_ecu_card.setLayout(
+            vehicle_ecu_layout
+        )
+
+        self.battery_ecu_card.setLayout(
+            battery_ecu_layout
+        )
+
+        engine_ecu_layout.addWidget(
+            self.engine_ecu_status
+        )
+
+        engine_ecu_layout.addWidget(
+            self.engine_ecu_info
+        )
+
+        vehicle_ecu_layout.addWidget(
+            self.vehicle_ecu_status
+        )
+
+        vehicle_ecu_layout.addWidget(
+            self.vehicle_ecu_info
+        )
+
+        battery_ecu_layout.addWidget(
+            self.battery_ecu_status
+        )
+
+        battery_ecu_layout.addWidget(
+            self.battery_ecu_info
+        )
+
+
+
         self.tx_id_input.setPlaceholderText(
             "CAN ID (ex. 0x100)"
         )
@@ -491,6 +608,12 @@ class MainWindow(QMainWindow):
         self.last_timestamp = {} # ID가 마지막으로 들어온 시간
         self.id_periods = {}    # ID 최근 주기
 
+        self.ecu_last_seen = {
+            "0x100":None,
+            "0x101":None,
+            "0x102":None
+        }
+
         # period, frequency avg
         self.period_sum = {}
         self.period_count = {}
@@ -584,11 +707,17 @@ class MainWindow(QMainWindow):
             self.transmit_button
         )
 
+        sidebar_layout.addWidget(
+            self.ecu_monitor_button
+        )
+
         sidebar_layout.addStretch()
 
         sidebar_layout.addWidget(
             title_label
         )
+
+
 
 
 
@@ -603,6 +732,7 @@ class MainWindow(QMainWindow):
         self.logger_page = QWidget()
         self.dbc_page = QWidget()
         self.transmit_page = QWidget()
+        self.ecu_monitor_page = QWidget()
 
         # Graph Widget 생성
         self.rpm_graph = pg.PlotWidget()
@@ -778,6 +908,7 @@ class MainWindow(QMainWindow):
         logger_layout = QVBoxLayout()
         dbc_layout = QVBoxLayout()
         transmit_layout = QVBoxLayout()
+        ecu_monitor_layout = QVBoxLayout()
 
         # 페이지에 Layout 연결
         self.analyzer_page.setLayout(
@@ -806,6 +937,10 @@ class MainWindow(QMainWindow):
 
         self.transmit_page.setLayout(
             transmit_layout
+        )
+
+        self.ecu_monitor_page.setLayout(
+            ecu_monitor_layout
         )
 
         # 각 페이지에 기존 위젯 배치
@@ -951,6 +1086,26 @@ class MainWindow(QMainWindow):
             self.tx_history
         )
 
+
+        # ECU Monitor Page
+        ecu_monitor_layout.addWidget(
+            QLabel("ECU STATUS")
+        )
+
+        ecu_monitor_layout.addWidget(
+            self.engine_ecu_card
+        )
+
+        ecu_monitor_layout.addWidget(
+            self.vehicle_ecu_card
+        )
+
+        ecu_monitor_layout.addWidget(
+            self.battery_ecu_card
+        )
+
+        ecu_monitor_layout.addStretch()
+
         # Dashboard Page
         dashboard_page_layout.addStretch()
         dashboard_page_layout.addLayout(dashboard_layout)
@@ -988,6 +1143,10 @@ class MainWindow(QMainWindow):
 
         self.stacked_widget.addWidget(
             self.transmit_page
+        )
+
+        self.stacked_widget.addWidget(
+            self.ecu_monitor_page
         )
 
         # Main Layout에는 메뉴 + Stacked Widget만
@@ -1054,6 +1213,10 @@ class MainWindow(QMainWindow):
 
         self.transmit_button.clicked.connect(
             lambda: self.change_page(6)
+        )
+
+        self.ecu_monitor_button.clicked.connect(
+            lambda: self.change_page(7)
         )
 
         self.tx_send_button.clicked.connect(
@@ -1280,6 +1443,28 @@ class MainWindow(QMainWindow):
                 background-color: #666666;
             }
 
+            QLabel#ecuStatus {
+                background-color: transparent;
+                border: none;
+                font-size: 18px;
+                font-weight: bold;
+                padding: 6px;
+            }
+
+            QWidget#ecuCard {
+                background-color: rgba(0, 0, 0, 210);
+                border: 1px solid #666666;
+                border-radius: 8px;
+                padding: 8px;
+            }
+
+            QLabel#ecuInfo {
+                color: #CCCCCC;
+                background-color: transparent;
+                font-size: 14px;
+                padding: 4px 6px;
+            }
+
             """
         )
 
@@ -1295,6 +1480,17 @@ class MainWindow(QMainWindow):
         simulator_thread = threading.Thread(
             target=run_simulator,
             daemon=True
+        )
+
+        #ECU Monitor Timer
+        self.ecu_timer = QTimer(self)
+
+        self.ecu_timer.timeout.connect(
+            self.update_ecu_status
+        )
+
+        self.ecu_timer.start(
+            500
         )
 
         self.refresh_log_list()
@@ -1453,6 +1649,9 @@ class MainWindow(QMainWindow):
             self.id_periods[can_id] = average_period
 
         self.last_timestamp[can_id] = timestamp
+
+        if can_id in self.ecu_last_seen:
+            self.ecu_last_seen[can_id] = time.time()
 
         self.update_statistics()
 
@@ -1623,6 +1822,24 @@ class MainWindow(QMainWindow):
         self.period_sum.clear()
         self.period_count.clear()
 
+        self.ecu_last_seen = {
+            "0x100": None,
+            "0x101": None,
+            "0x102": None
+        }
+
+        self.engine_ecu_info.setText(
+            "Period: 0.000 s | Frequency: 0.0 Hz"
+        )
+
+        self.vehicle_ecu_info.setText(
+            "Period: 0.000 s | Frequency: 0.0 Hz"
+        )
+
+        self.battery_ecu_info.setText(
+            "Period: 0.000 s | Frequency: 0.0 Hz"
+        )
+
         self.rpm_times.clear()
         self.rpm_values.clear()
         self.speed_times.clear()
@@ -1706,6 +1923,127 @@ class MainWindow(QMainWindow):
                 )
             )
 
+    def update_ecu_status(self):
+
+        if not self.last_timestamp:
+            return
+
+        current_time = time.time()
+
+        engine_last = self.ecu_last_seen[
+            "0x100"
+        ]
+
+        vehicle_last = self.ecu_last_seen[
+            "0x101"
+        ]
+
+        battery_last = self.ecu_last_seen[
+            "0x102"
+        ]
+
+        if (
+            engine_last is not None
+            and current_time - engine_last < 1.0
+        ):
+            self.engine_ecu_status.setText(
+                "Engine ECU : ONLINE"
+            )
+            self.engine_ecu_status.setStyleSheet(
+                "color: #00FF66;"
+            )
+        else:
+            self.engine_ecu_status.setText(
+                "Engine ECU : OFFLINE"
+            )
+            self.engine_ecu_status.setStyleSheet(
+                "color: #FF5555;"
+            )
+
+        if (
+            vehicle_last is not None
+            and current_time - vehicle_last < 1.0
+        ):
+            self.vehicle_ecu_status.setText(
+                "Vehicle ECU : ONLINE"
+            )
+            self.vehicle_ecu_status.setStyleSheet(
+                "color: #00FF66"
+            )
+        else:
+            self.vehicle_ecu_status.setText(
+                "Vehicle ECU : OFFLINE"
+            )
+            self.vehicle_ecu_status.setStyleSheet(
+                "color: #FF5555"
+            )
+
+        if (
+            battery_last is not None
+            and current_time - battery_last < 2.0
+        ):
+            self.battery_ecu_status.setText(
+                "Battery ECU : ONLINE"
+            )
+            self.battery_ecu_status.setStyleSheet(
+                "color: #00FF66"
+            )
+        else:
+            self.battery_ecu_status.setText(
+                "Battery ECU : OFFLINE"
+            )
+            self.battery_ecu_status.setStyleSheet(
+                "color: #FF5555"
+            )
+
+        engine_period = self.id_periods.get(
+            "0x100",
+            0
+        )
+
+        vehicle_period = self.id_periods.get(
+            "0x101",
+            0
+        )
+
+        battery_period = self.id_periods.get(
+            "0x102",
+            0
+        )
+
+        engine_frequency = (
+            1 / engine_period
+            if engine_period > 0
+            else 0
+        )
+
+        vehicle_frequency = (
+            1 / vehicle_period
+            if vehicle_period > 0
+            else 0
+        )
+
+        battery_frequency = (
+            1 / battery_period
+            if battery_period > 0
+            else 0
+        )
+
+        self.engine_ecu_info.setText(
+            f"Period: {engine_period:.3f} s | "
+            f"Frequency: {engine_frequency:.1f} Hz"
+        )
+
+        self.vehicle_ecu_info.setText(
+            f"Period: {vehicle_period:.3f} s | "
+            f"Frequency: {vehicle_frequency:.1f} Hz"
+        )
+
+        self.battery_ecu_info.setText(
+            f"Period: {battery_period:.3f} s | "
+            f"Frequency: {battery_frequency:.1f} Hz"
+        )
+
     def change_page(self, index):
         self.stacked_widget.setCurrentIndex(index)
 
@@ -1735,6 +2073,10 @@ class MainWindow(QMainWindow):
 
         self.transmit_button.setChecked(
             index == 6
+        )
+
+        self.ecu_monitor_button.setChecked(
+            index == 7
         )
 
     def send_can_message(self):
